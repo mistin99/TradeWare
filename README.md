@@ -1,4 +1,4 @@
-# Project Setup & Database Migration Guide
+# Project Setup
 
 This guide will help you:
 - Set up a virtual environment
