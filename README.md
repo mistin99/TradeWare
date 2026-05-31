@@ -45,10 +45,13 @@ pip install -e ".[dev]"
 
 ## 🔄 3. Running the application
 
-### Step-by-Step
-
-### ✅ Step 1: Start the FastAPI server
-
+### ✅ Option 1: Run the FastAPI directly on the machine
+application will be available at http://localhost:8000
 ```bash
 python -m uvicorn trade_ware.main:app --reload
+```
+### ✅ Option 2: Running with docker
+#### Step 1:Build and start containers
+```bash
+docker compose up --build
 ```
