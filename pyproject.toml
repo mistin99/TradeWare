@@ -14,7 +14,8 @@ dependencies = [
     "uvicorn",
     "sqlalchemy",
     "psycopg[binary]",
-    "pydantic-settings"
+    "pydantic-settings",
+    "email-validator"
 ]
 
 [project.optional-dependencies]

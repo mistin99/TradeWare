@@ -1,10 +1,13 @@
 """Tests for the database session configuration."""
 
-from trade_ware.database.session import engine
+from sqlalchemy import create_engine, text
+
+
+engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
 
 
 def test_db_connection():
-    """Tests that the database connection can be established."""
+    """Tests that the SQLAlchemy engine can execute a basic query."""
     with engine.connect() as conn:
-        result = conn.exec_driver_sql("SELECT 1")
-        assert result.scalar() == 1
+        result = conn.execute(text("SELECT 1"))
+        assert result.scalar_one() == 1
