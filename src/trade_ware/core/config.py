@@ -25,7 +25,6 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_username: str = ""
     smtp_password: str = ""
-    smtp_from_email: str = ""
 
     @property
     def resolved_database_url(self) -> str:

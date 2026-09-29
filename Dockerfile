@@ -4,7 +4,7 @@ WORKDIR /app
 COPY . .
 
 RUN pip install --upgrade pip
-RUN pip install -e .
+RUN pip install -e ".[dev]"
 
 EXPOSE 8000
 

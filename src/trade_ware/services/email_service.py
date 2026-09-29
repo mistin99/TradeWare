@@ -1,5 +1,5 @@
-from email.message import EmailMessage
 import smtplib
+from email.message import EmailMessage
 
 from trade_ware.core.config import settings
 
@@ -11,13 +11,16 @@ class EmailService:
     def send_email(
         to_email: str, subject: str, body: str, *, html_body: str | None = None
     ) -> None:
-        """Send an email if SMTP is configured, otherwise log it for local development."""
-        sender = settings.smtp_from_email or "noreply@localhost"
+        """Send email via SMTP, or log it when SMTP is not configured."""
 
-        if settings.smtp_host and settings.smtp_username and settings.smtp_password:
+        if (
+            settings.smtp_host
+            and settings.smtp_username
+            and settings.smtp_password
+        ):
             message = EmailMessage()
             message["Subject"] = subject
-            message["From"] = sender
+            message["From"] = settings.smtp_username
             message["To"] = to_email
             message.set_content(body)
 
