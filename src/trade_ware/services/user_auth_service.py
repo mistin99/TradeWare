@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -13,6 +14,8 @@ from trade_ware.schemas.user import (
     UserRegisterResponse,
 )
 from trade_ware.services.email_service import EmailService
+
+EMAIL_VERIFICATION_TOKEN_TTL = timedelta(minutes=15)
 
 
 class UserAuthService:
@@ -52,6 +55,8 @@ class UserAuthService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Email already registered",
             )
+
+        cls._delete_expired_verification_tokens(db)
 
         user = User(
             email=normalized_email,
@@ -114,7 +119,19 @@ class UserAuthService:
         if not record:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Invalid or expired verification token",
+                detail="Invalid verification token",
+            )
+
+        created_at = record.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        expires_at = created_at + EMAIL_VERIFICATION_TOKEN_TTL
+        if datetime.now(timezone.utc) >= expires_at:
+            db.delete(record)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="Verification token has expired",
             )
 
         user = db.query(User).filter(User.id == record.user_id).first()
@@ -134,3 +151,11 @@ class UserAuthService:
             email=user.email,
             message="Email verified successfully. You can now log in to TradeWare.",
         )
+
+    @staticmethod
+    def _delete_expired_verification_tokens(db: Session) -> None:
+        """Remove expired tokens during registration."""
+        cutoff = datetime.now(timezone.utc) - EMAIL_VERIFICATION_TOKEN_TTL
+        db.query(EmailVerificationToken).filter(
+            EmailVerificationToken.created_at <= cutoff
+        ).delete(synchronize_session=False)

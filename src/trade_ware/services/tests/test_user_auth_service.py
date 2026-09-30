@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from trade_ware.database.base import Base
@@ -107,4 +108,45 @@ def test_verify_email_rejects_unknown_token(db_session):
         UserAuthService.verify_email(db_session, "unknown-token")
 
     assert error.value.status_code == 404
+
+
+def test_verify_email_rejects_and_deletes_expired_token(db_session):
+    payload = UserCreate(email="person@example.com", password="StrongPass123!")
+    with patch(
+        "trade_ware.services.user_auth_service.EmailService.send_email"
+    ):
+        UserAuthService.register_user(db_session, payload)
+
+    token = db_session.query(EmailVerificationToken).one()
+    token.created_at = datetime.now(timezone.utc) - timedelta(minutes=16)
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as error:
+        UserAuthService.verify_email(db_session, token.token)
+
+    assert error.value.status_code == 410
+    assert db_session.query(EmailVerificationToken).count() == 0
+    assert db_session.query(User).one().is_verified is False
+
+
+def test_registration_purges_expired_tokens(db_session):
+    first_payload = UserCreate(
+        email="first@example.com", password="StrongPass123!"
+    )
+    second_payload = UserCreate(
+        email="second@example.com", password="StrongPass123!"
+    )
+    with patch(
+        "trade_ware.services.user_auth_service.EmailService.send_email"
+    ):
+        UserAuthService.register_user(db_session, first_payload)
+        expired_token = db_session.query(EmailVerificationToken).one()
+        expired_token.created_at = datetime.now(timezone.utc) - timedelta(minutes=16)
+        db_session.commit()
+
+        UserAuthService.register_user(db_session, second_payload)
+
+    remaining_tokens = db_session.query(EmailVerificationToken).all()
+    assert len(remaining_tokens) == 1
+    assert remaining_tokens[0].user_id == 2
 
