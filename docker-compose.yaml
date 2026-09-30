@@ -5,7 +5,7 @@ services:
 
     ports:
       - "8000:8000"
-      - "5678:5678"
+      - "127.0.0.1:5678:5678"
 
     env_file:
       - .env
@@ -17,12 +17,21 @@ services:
     volumes:
       - .:/app
 
-    command: >
-      python -m debugpy --listen 0.0.0.0:5678 --wait-for-client
-      -m uvicorn trade_ware.main:app
-      --host 0.0.0.0
-      --port 8000
-      --reload
+    command:
+      - python
+      - -m
+      - debugpy
+      - --listen
+      - 0.0.0.0:5678
+      - --wait-for-client
+      - -m
+      - uvicorn
+      - trade_ware.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
 
   db:
     image: postgres:latest

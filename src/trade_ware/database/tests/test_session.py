@@ -2,8 +2,10 @@
 
 from sqlalchemy import create_engine, text
 
-
-engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+engine = create_engine(
+    "sqlite:///:memory:",
+    connect_args={"check_same_thread": False},
+)
 
 
 def test_db_connection():

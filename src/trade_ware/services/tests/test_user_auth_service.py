@@ -39,6 +39,9 @@ def test_password_hash_round_trip():
     assert UserAuthService.verify_password("StrongPass123!", password_hash)
     assert not UserAuthService.verify_password("wrong-password", password_hash)
     assert not UserAuthService.verify_password("password", "invalid-hash")
+    assert not UserAuthService.verify_password(
+        "password", "pbkdf2_sha256$malformed"
+    )
 
 
 def test_register_user_persists_user_and_mocks_email(db_session):
@@ -183,6 +186,14 @@ def test_verified_user_can_login_without_profile(db_session):
 
     assert refreshed.access_token
     assert refreshed.refresh_token
+
+    with pytest.raises(HTTPException) as error:
+        UserAuthService.refresh_access_token(
+            db_session,
+            RefreshTokenRequest(refresh_token=result.refresh_token),
+        )
+
+    assert error.value.status_code == 401
 
 
 def test_refresh_rejects_an_access_token(db_session):

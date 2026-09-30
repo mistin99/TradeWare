@@ -36,9 +36,13 @@ Copy the command output into `JWT_SECRET_KEY`:
 JWT_SECRET_KEY=paste-the-generated-value-here
 ```
 
+Set `APP_ENVIRONMENT=production` in production so the application rejects the
+development fallback secret.
+
 Run the application with:
 
 ```bash
+alembic upgrade head
 python -m uvicorn trade_ware.main:app --reload
 ```
 
@@ -51,6 +55,8 @@ After setting the values in `.env`, build and start the services:
 ```bash
 docker compose up --build
 ```
+
+Compose applies `alembic upgrade head` before starting the API container.
 
 The API is published on port `8000`, PostgreSQL on `5432`, and the development
 debugger on `5678`. The debugger waits for a VS Code attach session as configured
@@ -69,6 +75,8 @@ Authentication endpoints are currently under `/api/v1/auth`:
 | `POST` | `/api/v1/auth/refresh` | Refresh the access token without logging in again |
 | `GET` | `/api/v1/users/me` | Return the authenticated user's profile state |
 | `PATCH` | `/api/v1/users/me/profile` | Create or update the authenticated user's profile |
+| `GET` | `/api/v1/users/me/paper-account` | Get or create the user's virtual cash account |
+| `POST` | `/api/v1/users/me/paper-account/reset` | Reset virtual cash to the starting balance |
 
 Registration accepts JSON containing an email address and a password of at
 least eight characters. The email is normalized to lowercase. The password is
@@ -97,26 +105,35 @@ sender address is the authenticated `SMTP_USERNAME`.
 lifetime. `REFRESH_TOKEN_EXPIRE_DAYS` controls the longer-lived refresh token,
 which is used to obtain a new access token without asking the user to log in
 again. These are separate from `EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES`,
-which controls verification links.
+which controls verification links. Refresh-token hashes are stored in the
+database; rotating a refresh token revokes the token that was consumed.
+
+The paper account is a simulated cash account, not a brokerage account. The
+first authenticated request to `/api/v1/users/me/paper-account` creates one
+with `PAPER_ACCOUNT_STARTING_BALANCE` (1000.00 by default). Later requests
+return the same account and balance. Market data, positions, orders, deposits,
+withdrawals, and buy/sell behavior are intentionally not implemented yet. The
+reset endpoint is an explicit development action that restores only the cash
+balance to `PAPER_ACCOUNT_STARTING_BALANCE`; it does not represent a real-money
+operation.
 
 ## Database initialization and migrations
 
-At application startup, SQLAlchemy `Base.metadata.create_all()` creates tables
-that do not exist. It does **not** update existing tables when columns,
-constraints, or types change. It is adequate for the current initial schema,
-but it is not a schema migration strategy and cannot guarantee safe upgrades.
+The application does not create or alter tables at startup. Alembic owns schema
+creation and changes, so run `alembic upgrade head` before starting the API.
 
-Alembic is configured from the application settings and includes the
-`user_profiles` migration. Apply it with:
+Alembic is configured from the application settings. The initial schema
+migration creates users, verification tokens, profiles, and paper accounts;
+the next migration adds persisted refresh-token sessions. Apply migrations with:
 
 ```bash
 alembic upgrade head
 ```
 
-Run this against a backup or disposable database first. Existing databases
-created by the application already have the users and token tables from
-`create_all()`; this migration adds the separate profile table without changing
-those authentication tables.
+Run this against a backup or disposable database first. Since this project is
+not live yet, recreate the development
+database before applying the squashed baseline. Do not use this reset procedure
+against a database containing data you need to preserve.
 
 ## Tests
 

@@ -3,6 +3,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from trade_ware.core.config import settings
@@ -10,8 +11,10 @@ from trade_ware.core.security import (
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
+    hash_refresh_token,
 )
 from trade_ware.models.email_verification_token import EmailVerificationToken
+from trade_ware.models.refresh_token import RefreshToken
 from trade_ware.models.user import User
 from trade_ware.schemas.auth import (
     LoginRequest,
@@ -45,7 +48,10 @@ class UserAuthService:
         if not password_hash.startswith("pbkdf2_sha256$"):
             return False
 
-        _, salt, digest_hex = password_hash.split("$", 2)
+        try:
+            _, salt, digest_hex = password_hash.split("$", 2)
+        except ValueError:
+            return False
         derived = hashlib.pbkdf2_hmac(
             "sha256",
             password.encode("utf-8"),
@@ -74,9 +80,12 @@ class UserAuthService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Email address is not verified",
             )
+        refresh_token = create_refresh_token(user.id)
+        UserAuthService._store_refresh_token(db, user.id, refresh_token)
+        db.commit()
         return TokenResponse(
             access_token=create_access_token(user.id),
-            refresh_token=create_refresh_token(user.id),
+            refresh_token=refresh_token,
         )
 
     @staticmethod
@@ -84,6 +93,32 @@ class UserAuthService:
         db: Session, payload: RefreshTokenRequest
     ) -> TokenResponse:
         user_id = decode_refresh_token(payload.refresh_token)
+        refresh_record = (
+            db.query(RefreshToken)
+            .filter(
+                RefreshToken.token_hash
+                == hash_refresh_token(payload.refresh_token),
+                RefreshToken.user_id == user_id,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .first()
+        )
+        if not refresh_record:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or revoked refresh token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        expires_at = refresh_record.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) >= expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         user = db.query(User).filter(User.id == user_id).first()
         if not user or not user.is_verified:
             raise HTTPException(
@@ -91,9 +126,42 @@ class UserAuthService:
                 detail="Invalid or unverified user",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        revoked_at = datetime.now(timezone.utc)
+        result = db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.id == refresh_record.id,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .values(revoked_at=revoked_at)
+        )
+        if getattr(result, "rowcount", 0) != 1:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token was already used",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        refresh_token = create_refresh_token(user.id)
+        UserAuthService._store_refresh_token(db, user.id, refresh_token)
+        db.commit()
         return TokenResponse(
             access_token=create_access_token(user.id),
-            refresh_token=create_refresh_token(user.id),
+            refresh_token=refresh_token,
+        )
+
+    @staticmethod
+    def _store_refresh_token(
+        db: Session, user_id: int, refresh_token: str
+    ) -> None:
+        """Store only the hash and expiry of a newly issued refresh token."""
+        db.add(
+            RefreshToken(
+                user_id=user_id,
+                token_hash=hash_refresh_token(refresh_token),
+                expires_at=datetime.now(timezone.utc)
+                + timedelta(days=settings.refresh_token_expire_days),
+            )
         )
 
     @classmethod

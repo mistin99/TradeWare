@@ -1,8 +1,13 @@
-import pytest
-from fastapi import HTTPException
 from unittest.mock import Mock
 
-from trade_ware.core.security import create_access_token, get_current_user
+import pytest
+from fastapi import HTTPException
+
+from trade_ware.core.security import (
+    create_access_token,
+    create_refresh_token,
+    get_current_user,
+)
 
 
 def test_access_token_identifies_user():
@@ -18,6 +23,15 @@ def test_access_token_identifies_user():
 
 def test_invalid_access_token_is_unauthorized():
     credentials = Mock(credentials="invalid-token")
+
+    with pytest.raises(HTTPException) as error:
+        get_current_user(credentials, Mock())
+
+    assert error.value.status_code == 401
+
+
+def test_refresh_token_is_not_accepted_as_access_token():
+    credentials = Mock(credentials=create_refresh_token(42))
 
     with pytest.raises(HTTPException) as error:
         get_current_user(credentials, Mock())

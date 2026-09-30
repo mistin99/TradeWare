@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -23,14 +25,21 @@ def create_access_token(user_id: int) -> str:
 
 
 def create_refresh_token(user_id: int) -> str:
+    """Create a refresh JWT with a unique identifier for persistence."""
     expires_at = datetime.now(timezone.utc) + timedelta(
         days=settings.refresh_token_expire_days
     )
-    payload = {"sub": str(user_id), "type": "refresh", "exp": expires_at}
+    payload = {
+        "sub": str(user_id),
+        "type": "refresh",
+        "jti": secrets.token_urlsafe(24),
+        "exp": expires_at,
+    }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm="HS256")
 
 
 def decode_refresh_token(token: str) -> int:
+    """Validate a refresh JWT and return its user ID."""
     try:
         payload = jwt.decode(
             token,
@@ -46,6 +55,11 @@ def decode_refresh_token(token: str) -> int:
             detail="Invalid or expired refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
+
+
+def hash_refresh_token(token: str) -> str:
+    """Hash a refresh token before storing it in the database."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def get_current_user(
