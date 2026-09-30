@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from trade_ware.database.base import Base
 from trade_ware.models.email_verification_token import EmailVerificationToken
 from trade_ware.models.user import User
+from trade_ware.schemas.auth import LoginRequest, RefreshTokenRequest
 from trade_ware.schemas.user import UserCreate
 from trade_ware.services.user_auth_service import UserAuthService
 
@@ -154,4 +155,76 @@ def test_registration_purges_expired_tokens(db_session):
     assert remaining_tokens[0].user_id == db_session.query(User).filter(
         User.email == "second@example.com"
     ).one().id
+
+
+def test_verified_user_can_login_without_profile(db_session):
+    payload = UserCreate(email="person@example.com", password="StrongPass123!")
+    with patch(
+        "trade_ware.services.user_auth_service.EmailService.send_email"
+    ):
+        UserAuthService.register_user(db_session, payload)
+    user = db_session.query(User).one()
+    user.is_verified = True
+    db_session.commit()
+
+    result = UserAuthService.login_user(
+        db_session,
+        LoginRequest(email="PERSON@example.com", password="StrongPass123!"),
+    )
+
+    assert result.token_type == "bearer"
+    assert result.access_token
+    assert result.refresh_token
+
+    refreshed = UserAuthService.refresh_access_token(
+        db_session,
+        RefreshTokenRequest(refresh_token=result.refresh_token),
+    )
+
+    assert refreshed.access_token
+    assert refreshed.refresh_token
+
+
+def test_refresh_rejects_an_access_token(db_session):
+    payload = UserCreate(email="person@example.com", password="StrongPass123!")
+    with patch(
+        "trade_ware.services.user_auth_service.EmailService.send_email"
+    ):
+        UserAuthService.register_user(db_session, payload)
+    user = db_session.query(User).one()
+    user.is_verified = True
+    db_session.commit()
+
+    access_token = UserAuthService.login_user(
+        db_session,
+        LoginRequest(
+            email="person@example.com", password="StrongPass123!"
+        ),
+    ).access_token
+
+    with pytest.raises(HTTPException) as error:
+        UserAuthService.refresh_access_token(
+            db_session,
+            RefreshTokenRequest(refresh_token=access_token),
+        )
+
+    assert error.value.status_code == 401
+
+
+def test_unverified_user_cannot_login(db_session):
+    payload = UserCreate(email="person@example.com", password="StrongPass123!")
+    with patch(
+        "trade_ware.services.user_auth_service.EmailService.send_email"
+    ):
+        UserAuthService.register_user(db_session, payload)
+
+    with pytest.raises(HTTPException) as error:
+        UserAuthService.login_user(
+            db_session,
+            LoginRequest(
+                email="person@example.com", password="StrongPass123!"
+            ),
+        )
+
+    assert error.value.status_code == 403
 

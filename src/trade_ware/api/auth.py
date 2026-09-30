@@ -2,6 +2,11 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from trade_ware.database.session import get_db
+from trade_ware.schemas.auth import (
+    LoginRequest,
+    RefreshTokenRequest,
+    TokenResponse,
+)
 from trade_ware.schemas.user import (
     EmailVerificationResponse,
     UserCreate,
@@ -31,3 +36,19 @@ def verify_email(
     db: Session = db_dependency,
 ) -> EmailVerificationResponse:
     return UserAuthService.verify_email(db, token)
+
+
+@router.post("/login", response_model=TokenResponse)
+def login_user(
+    payload: LoginRequest,
+    db: Session = db_dependency,
+) -> TokenResponse:
+    return UserAuthService.login_user(db, payload)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_access_token(
+    payload: RefreshTokenRequest,
+    db: Session = db_dependency,
+) -> TokenResponse:
+    return UserAuthService.refresh_access_token(db, payload)

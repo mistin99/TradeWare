@@ -15,7 +15,9 @@ dependencies = [
     "sqlalchemy",
     "psycopg[binary]",
     "pydantic-settings",
-    "email-validator"
+    "email-validator",
+    "PyJWT",
+    "alembic"
 ]
 
 [project.optional-dependencies]

@@ -6,16 +6,24 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from trade_ware.core.config import settings
+from trade_ware.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+)
 from trade_ware.models.email_verification_token import EmailVerificationToken
 from trade_ware.models.user import User
+from trade_ware.schemas.auth import (
+    LoginRequest,
+    RefreshTokenRequest,
+    TokenResponse,
+)
 from trade_ware.schemas.user import (
     EmailVerificationResponse,
     UserCreate,
     UserRegisterResponse,
 )
 from trade_ware.services.email_service import EmailService
-
-EMAIL_VERIFICATION_TOKEN_TTL = timedelta(minutes=15)
 
 
 class UserAuthService:
@@ -45,6 +53,48 @@ class UserAuthService:
             100_000,
         )
         return derived.hex() == digest_hex
+
+    @staticmethod
+    def login_user(db: Session, payload: LoginRequest) -> TokenResponse:
+        user = (
+            db.query(User)
+            .filter(User.email == payload.email.lower())
+            .first()
+        )
+        if not user or not UserAuthService.verify_password(
+            payload.password, user.password_hash
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if not user.is_verified:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Email address is not verified",
+            )
+        return TokenResponse(
+            access_token=create_access_token(user.id),
+            refresh_token=create_refresh_token(user.id),
+        )
+
+    @staticmethod
+    def refresh_access_token(
+        db: Session, payload: RefreshTokenRequest
+    ) -> TokenResponse:
+        user_id = decode_refresh_token(payload.refresh_token)
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.is_verified:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or unverified user",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return TokenResponse(
+            access_token=create_access_token(user.id),
+            refresh_token=create_refresh_token(user.id),
+        )
 
     @classmethod
     def register_user(
@@ -87,10 +137,15 @@ class UserAuthService:
             f"{settings.app_base_url.rstrip('/')}/api/v1/auth/verify-email"
             f"?token={verification_token}"
         )
+        verification_expire_minutes = (
+            settings.email_verification_token_expire_minutes
+        )
         body = (
             "Welcome to TradeWare!\n\n"
             "Please verify your email by visiting the link below:\n\n"
             f"{verification_url}\n\n"
+            f"This verification link expires in {verification_expire_minutes} "
+            "minutes.\n\n"
             "If you did not create this account, you can ignore this email."
         )
         html_body = (
@@ -98,6 +153,8 @@ class UserAuthService:
             "<h2>Welcome to TradeWare</h2>"
             "<p>Please verify your email by clicking the link below:</p>"
             f"<p><a href='{verification_url}'>Verify your email</a></p>"
+            f"<p>This verification link expires in "
+            f"{verification_expire_minutes} minutes.</p>"
             "<p>If you did not create this account, you can ignore "
             "this email.</p>"
             "</body></html>"
@@ -135,7 +192,9 @@ class UserAuthService:
         created_at = record.created_at
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=timezone.utc)
-        expires_at = created_at + EMAIL_VERIFICATION_TOKEN_TTL
+        expires_at = created_at + timedelta(
+            minutes=settings.email_verification_token_expire_minutes
+        )
         if datetime.now(timezone.utc) >= expires_at:
             db.delete(record)
             db.commit()
@@ -167,7 +226,9 @@ class UserAuthService:
     @staticmethod
     def _delete_expired_verification_tokens(db: Session) -> None:
         """Remove expired tokens during registration."""
-        cutoff = datetime.now(timezone.utc) - EMAIL_VERIFICATION_TOKEN_TTL
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            minutes=settings.email_verification_token_expire_minutes
+        )
         db.query(EmailVerificationToken).filter(
             EmailVerificationToken.created_at <= cutoff
         ).delete(synchronize_session="fetch")

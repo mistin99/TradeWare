@@ -53,6 +53,10 @@ Authentication endpoints are currently under `/api/v1/auth`:
 | --- | --- | --- |
 | `POST` | `/api/v1/auth/register` | Register an account and send a verification email |
 | `GET` | `/api/v1/auth/verify-email?token=...` | Verify an account using its one-time token |
+| `POST` | `/api/v1/auth/login` | Log in a verified user and return access/refresh tokens |
+| `POST` | `/api/v1/auth/refresh` | Refresh the access token without logging in again |
+| `GET` | `/api/v1/users/me` | Return the authenticated user's profile state |
+| `PATCH` | `/api/v1/users/me/profile` | Create or update the authenticated user's profile |
 
 Registration accepts JSON containing an email address and a password of at
 least eight characters. The email is normalized to lowercase. The password is
@@ -63,10 +67,12 @@ Registration creates a user with `is_verified=false` and a separate
 registered address. A successful verification sets `is_verified=true` and
 deletes that token, so it cannot be reused. The registration response currently
 also includes the verification URL, which is useful for local development.
-Verification tokens are valid for 15 minutes. An expired token is rejected and
-deleted when it is used. Registration also opportunistically deletes expired
-tokens, so stale rows are cleaned up as new accounts register; a scheduled
-cleanup task can be added if token volume later requires more frequent purging.
+Verification tokens are valid for the number of minutes configured by
+`EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES` (15 by default). That expiration is
+included in the verification email. An expired token is rejected and deleted
+when it is used. Registration also opportunistically deletes expired tokens, so
+stale rows are cleaned up as new accounts register; a scheduled cleanup task
+can be added if token volume later requires more frequent purging.
 
 The verification URL is built from `APP_BASE_URL`. Set it to the address users
 can reach (for example, `http://localhost:8000` during local development). The
@@ -75,12 +81,30 @@ are loaded from `.env`. If SMTP is not configured, the email service logs the
 message for development instead of connecting to a mail server. The current
 sender address is the authenticated `SMTP_USERNAME`.
 
+`ACCESS_TOKEN_EXPIRE_MINUTES` controls the short-lived JWT access-token
+lifetime. `REFRESH_TOKEN_EXPIRE_DAYS` controls the longer-lived refresh token,
+which is used to obtain a new access token without asking the user to log in
+again. These are separate from `EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES`,
+which controls verification links.
+
 ## Database initialization and migrations
 
 At application startup, SQLAlchemy `Base.metadata.create_all()` creates tables
 that do not exist. It does **not** update existing tables when columns,
 constraints, or types change. It is adequate for the current initial schema,
 but it is not a schema migration strategy and cannot guarantee safe upgrades.
+
+Alembic is configured from the application settings and includes the
+`user_profiles` migration. Apply it with:
+
+```bash
+alembic upgrade head
+```
+
+Run this against a backup or disposable database first. Existing databases
+created by the application already have the users and token tables from
+`create_all()`; this migration adds the separate profile table without changing
+those authentication tables.
 
 ## Tests
 

@@ -23,3 +23,14 @@ def test_user_model_accepts_user_fields():
     assert user.password_hash == "hashed-password"
     assert user.is_verified is False
 
+
+def test_user_model_keeps_verification_separate_from_profile_state():
+    user = User(
+        email="person@example.com",
+        password_hash="hashed-password",
+        is_verified=True,
+    )
+
+    assert user.is_verified is True
+    assert not hasattr(user, "profile_completed")
+

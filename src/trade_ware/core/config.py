@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_username: str = ""
     smtp_password: str = ""
+    jwt_secret_key: str = "development-only-change-me-32-bytes"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 30
+    email_verification_token_expire_minutes: int = 15
 
     @property
     def resolved_database_url(self) -> str:
@@ -41,7 +45,10 @@ class Settings(BaseSettings):
         if not user and not password and not host and not self.database_name:
             return "sqlite:///./trade_ware.db"
 
-        return f"postgresql+psycopg://{user}:{password}@{host}:{self.database_port}/{self.database_name}"
+        return (
+            f"postgresql+psycopg://{user}:{password}@{host}:"
+            f"{self.database_port}/{self.database_name}"
+        )
 
 
 @lru_cache
