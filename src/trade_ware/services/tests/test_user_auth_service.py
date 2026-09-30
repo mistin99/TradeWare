@@ -1,10 +1,11 @@
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
 
 from trade_ware.database.base import Base
 from trade_ware.models.email_verification_token import EmailVerificationToken
@@ -141,12 +142,16 @@ def test_registration_purges_expired_tokens(db_session):
     ):
         UserAuthService.register_user(db_session, first_payload)
         expired_token = db_session.query(EmailVerificationToken).one()
-        expired_token.created_at = datetime.now(timezone.utc) - timedelta(minutes=16)
+        expired_token.created_at = datetime.now(timezone.utc) - timedelta(
+            minutes=16
+        )
         db_session.commit()
 
         UserAuthService.register_user(db_session, second_payload)
 
     remaining_tokens = db_session.query(EmailVerificationToken).all()
     assert len(remaining_tokens) == 1
-    assert remaining_tokens[0].user_id == 2
+    assert remaining_tokens[0].user_id == db_session.query(User).filter(
+        User.email == "second@example.com"
+    ).one().id
 

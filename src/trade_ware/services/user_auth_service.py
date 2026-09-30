@@ -47,9 +47,13 @@ class UserAuthService:
         return derived.hex() == digest_hex
 
     @classmethod
-    def register_user(cls, db: Session, payload: UserCreate) -> UserRegisterResponse:
+    def register_user(
+        cls, db: Session, payload: UserCreate
+    ) -> UserRegisterResponse:
         normalized_email = payload.email.lower()
-        existing_user = db.query(User).filter(User.email == normalized_email).first()
+        existing_user = (
+            db.query(User).filter(User.email == normalized_email).first()
+        )
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -79,7 +83,10 @@ class UserAuthService:
         db.commit()
         db.refresh(user)
 
-        verification_url = f"{settings.app_base_url.rstrip('/')}/api/v1/auth/verify-email?token={verification_token}"
+        verification_url = (
+            f"{settings.app_base_url.rstrip('/')}/api/v1/auth/verify-email"
+            f"?token={verification_token}"
+        )
         body = (
             "Welcome to TradeWare!\n\n"
             "Please verify your email by visiting the link below:\n\n"
@@ -91,7 +98,8 @@ class UserAuthService:
             "<h2>Welcome to TradeWare</h2>"
             "<p>Please verify your email by clicking the link below:</p>"
             f"<p><a href='{verification_url}'>Verify your email</a></p>"
-            "<p>If you did not create this account, you can ignore this email.</p>"
+            "<p>If you did not create this account, you can ignore "
+            "this email.</p>"
             "</body></html>"
         )
 
@@ -110,7 +118,9 @@ class UserAuthService:
         )
 
     @classmethod
-    def verify_email(cls, db: Session, token: str) -> EmailVerificationResponse:
+    def verify_email(
+        cls, db: Session, token: str
+    ) -> EmailVerificationResponse:
         record = (
             db.query(EmailVerificationToken)
             .filter(EmailVerificationToken.token == token)
@@ -149,7 +159,9 @@ class UserAuthService:
 
         return EmailVerificationResponse(
             email=user.email,
-            message="Email verified successfully. You can now log in to TradeWare.",
+            message=(
+                "Email verified successfully. You can now log in to TradeWare."
+            ),
         )
 
     @staticmethod
@@ -158,4 +170,4 @@ class UserAuthService:
         cutoff = datetime.now(timezone.utc) - EMAIL_VERIFICATION_TOKEN_TTL
         db.query(EmailVerificationToken).filter(
             EmailVerificationToken.created_at <= cutoff
-        ).delete(synchronize_session=False)
+        ).delete(synchronize_session="fetch")
