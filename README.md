@@ -24,6 +24,18 @@ installed PostgreSQL server, use `DATABASE_HOST=localhost`. For the Compose
 database, the application container uses `DATABASE_HOST=db`; the host machine
 connects to the published database at `localhost:5432`.
 
+Generate a private JWT signing secret for `.env` with OpenSSL:
+
+```bash
+openssl rand -hex 32
+```
+
+Copy the command output into `JWT_SECRET_KEY`:
+
+```env
+JWT_SECRET_KEY=paste-the-generated-value-here
+```
+
 Run the application with:
 
 ```bash
