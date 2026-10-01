@@ -17,12 +17,16 @@ dependencies = [
     "pydantic-settings",
     "email-validator",
     "PyJWT",
-    "alembic"
+    "alembic",
+    "httpx",
+    "websockets",
+    "redis"
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-asyncio",
     "ruff",
     "black",
     "debugpy"

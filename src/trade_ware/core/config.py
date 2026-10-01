@@ -34,20 +34,23 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
     email_verification_token_expire_minutes: int = 15
     paper_account_starting_balance: str = "1000.00"
+    twelve_data_api_key: str = ""
+    finnhub_api_key: str = ""
+    market_data_provider: str = "twelve_data"
+    market_data_timeout_seconds: float = 10.0
+    market_data_cache_ttl_seconds: float = 30.0
+    market_data_refresh_interval_seconds: int = 60
+    redis_url: str = "redis://redis:6379/0"
 
     @model_validator(mode="after")
     def validate_jwt_secret(self) -> "Settings":
         """Reject missing or weak JWT secrets outside development."""
-        if (
-            self.app_environment != "development"
-            and (
-                len(self.jwt_secret_key.strip()) < 32
-                or self.jwt_secret_key == DEFAULT_JWT_SECRET
-            )
+        if self.app_environment != "development" and (
+            len(self.jwt_secret_key.strip()) < 32
+            or self.jwt_secret_key == DEFAULT_JWT_SECRET
         ):
             raise ValueError(
-                "JWT_SECRET_KEY must contain at least 32 characters "
-                "outside development"
+                "JWT_SECRET_KEY must contain at least 32 characters outside development"
             )
         return self
 

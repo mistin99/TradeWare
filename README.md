@@ -117,10 +117,80 @@ reset endpoint is an explicit development action that restores only the cash
 balance to `PAPER_ACCOUNT_STARTING_BALANCE`; it does not represent a real-money
 operation.
 
+## Market data
+
+Market data is server-side only. Clients never receive provider API keys and do
+not connect directly to Twelve Data or Finnhub. Set replacement keys only in
+the local `.env` file:
+
+```env
+TWELVE_DATA_API_KEY=your-replacement-key
+FINNHUB_API_KEY=your-replacement-key
+MARKET_DATA_PROVIDER=twelve_data
+REDIS_URL=redis://redis:6379/0
+```
+
+`MarketDataProvider` is the strategy interface; `TwelveDataProvider` and
+`FinnhubProvider` normalize REST responses into shared quote, history, and news
+models. `MarketDataService` receives the provider through dependency injection
+and does not instantiate either concrete provider. The factory selects the
+configured strategy.
+
+Redis stores fresh live prices centrally, while PostgreSQL stores quote
+snapshots for historical reads. `MarketDataStreamManager` owns one provider
+WebSocket connection,
+deduplicates symbol subscriptions, and writes updates to that cache. It uses
+bounded reconnect backoff and can later be replaced with Redis for multiple
+backend instances. Automatic Twelve Data-to-Finnhub failover is intentionally
+left for a future provider composition; application code already depends on
+the provider interface needed to add it without changing business logic.
+
 ## Database initialization and migrations
 
 The application does not create or alter tables at startup. Alembic owns schema
 creation and changes, so run `alembic upgrade head` before starting the API.
+
+The refresh worker runs every `MARKET_DATA_REFRESH_INTERVAL_SECONDS` seconds
+(60 by default). It fetches the symbols in `MARKET_DATA_SYMBOLS`, stores the
+latest price in Redis, and appends a normalized quote snapshot to PostgreSQL.
+User requests read latest prices from Redis and history from PostgreSQL; they do
+not call Twelve Data or Finnhub directly.
+
+### Testing market data with Postman
+
+Start the services and wait for the app and Redis containers to become healthy:
+
+```bash
+docker compose up --build -d
+docker compose logs -f app
+```
+
+Register and verify a user, then log in:
+
+```http
+POST http://localhost:8000/api/v1/auth/login
+Content-Type: application/json
+```
+
+```json
+{
+	"email": "person@example.com",
+	"password": "StrongPass123!"
+}
+```
+
+In Postman, set **Authorization -> Bearer Token** to the returned
+`access_token`, then request:
+
+```http
+GET http://localhost:8000/api/v1/market-data/price/AAPL
+GET http://localhost:8000/api/v1/market-data/history/AAPL?limit=20
+```
+
+The price endpoint returns `503` until the worker has successfully refreshed
+that symbol. Add symbols to `MARKET_DATA_SYMBOLS` in `.env`, restart Compose,
+and wait for the next 60-second refresh cycle. Never put provider API keys in
+Postman; clients use only TradeWare JWTs.
 
 Alembic is configured from the application settings. The initial schema
 migration creates users, verification tokens, profiles, and paper accounts;
